@@ -1,0 +1,51 @@
+<html> 
+<head><meta content="text/html" charset="UTF-8"></head>
+<body> 
+<script
+  src="https://code.jquery.com/jquery-3.4.1.min.js"
+  integrity="sha256-CSXorXvZcTkaix6Yvo6HppcZGetbYMGWSFlBw8HfCJo="
+  crossorigin="anonymous"></script>
+<script type="text/javascript">
+function start(){
+  $("button#send").click(()=>{
+    $.getJSON("/ctrl", {pulse_width: $("#pulse_width").val()}, (data, textStatus, jqXHR)=>{
+      $("#pulse_width").val(data.pulse_width);
+    })
+  });
+  $("button.pulse_width").click(function(){
+    var v = $(this).attr("v");
+    if(v.charAt(0)=='+' || v.charAt(0)=='-'){
+      $("#pulse_width").val(parseInt(v) + parseInt($("#pulse_width").val()));
+    }else{
+      $("#pulse_width").val(parseInt(v));
+    }
+    $("button#send").click();
+  });
+}
+$(start);
+</script>
+
+
+<div>
+  <button class="pulse_width" v="500" > 500</button>
+  <button class="pulse_width" v="1000">1000</button>
+  <button class="pulse_width" v="1500">1500</button>
+  <button class="pulse_width" v="2000">2000</button>
+  <button class="pulse_width" v="2500">2500</button>
+</div>
+  
+<div>
+  <button class="pulse_width" v="-100">-100</button>
+  <button class="pulse_width" v="-10" >-10</button>
+  <button class="pulse_width" v="-1"  >-1</button>
+
+  <input id="pulse_width" value="1500" size=5 />
+  <button id="send">Send</button>
+  
+  <button class="pulse_width" v="+1"  >+1</button>
+  <button class="pulse_width" v="+10" >+10</button>
+  <button class="pulse_width" v="+100">+100</button>
+</div>
+
+</body>
+</html>
