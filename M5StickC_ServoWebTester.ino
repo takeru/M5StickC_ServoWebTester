@@ -3,20 +3,24 @@
 #include "esp_http_server.h"
 #include <WiFi.h>
 
-#include <ESP32Servo.h>
-Servo servo1;
-int32_t servo1_pin = 26;
-const int32_t MIN_US = 500;
-const int32_t MAX_US = 2500;
+#include <Wire.h>
+#include "Adafruit_PWMServoDriver.h"
+Adafruit_PWMServoDriver servo = Adafruit_PWMServoDriver(0x40, Wire);
 
-int pulse_width = 1500;
+int8_t  _ctrl_sleeping     = -1;
+int8_t  _ctrl_servo_number = -1;
+int16_t _ctrl_pulse_width  = -1;
+bool    sleeping;
 
 void setup() {
   M5.begin();
 
-  servo1.setPeriodHertz(50);
-  servo1.attach(servo1_pin, MIN_US, MAX_US);
-  
+  Wire.begin(0, 26); // SDA=0, SCL=26
+  servo.begin();
+  servo.setOscillatorFrequency(26000000); // Get it from oscillator.ino
+  servo.setPWMFreq(50);
+  sleep(true);
+
   while(1){
     printf("Connecting...\n");
     bool ok = wifi_connect(10*1000);
@@ -32,7 +36,7 @@ void setup() {
 void loop() {
   M5.update();
   if(M5.BtnA.wasPressed()){
-    pulse_width = 1500;
+    _ctrl_sleeping = !sleeping;
   }else
   if(M5.BtnA.wasReleased()){
   }else
@@ -40,34 +44,36 @@ void loop() {
   }else
   if(M5.BtnB.wasReleased()){
   }
+  //servo.writeMicroseconds(0, 1500);
 
-  if(pulse_width != servo1.readMicroseconds()){
-    servo1.writeMicroseconds(pulse_width);
+  if(0<=_ctrl_servo_number && 0<=_ctrl_pulse_width){
+    servo.writeMicroseconds(_ctrl_servo_number, _ctrl_pulse_width);
+    printf("servo_number=%d pulse_width=%d\n", _ctrl_servo_number, _ctrl_pulse_width);
+    _ctrl_servo_number = -1;
+    _ctrl_pulse_width  = -1;
+  }
+  if(0<=_ctrl_sleeping){
+    sleep(_ctrl_sleeping==1);
+    printf("sleep=%d\n", sleeping);
+    _ctrl_sleeping = -1;
   }
 
   unsigned long ms = millis();
   static unsigned long prevMs = 0;
   if(1000 < ms-prevMs){
-//    static unsigned long prevTotalReadBytes = 0;
-//    static unsigned long prevTotalReadCount = 0;
-//    static unsigned long prevTotalSendBytes = 0;
-//    if(prevMs){
-//      printf("readBytes=%d(%d/s) readCount=%d(%d/s) sendBytes=%d(%d/s)\n",
-//        totalReadBytes,
-//        1000*(totalReadBytes-prevTotalReadBytes)/(ms-prevMs),
-//        totalReadCount,
-//        1000*(totalReadCount-prevTotalReadCount)/(ms-prevMs),
-//        totalSendBytes,
-//        1000*(totalSendBytes-prevTotalSendBytes)/(ms-prevMs)
-//      );
-//    }
-//    prevTotalReadBytes = totalReadBytes;
-//    prevTotalReadCount = totalReadCount;
-//    prevTotalSendBytes = totalSendBytes;
     prevMs = ms;
     update_display();
   }
   delay(1);
+}
+
+void sleep(bool s){
+  sleeping = s;
+  if(sleeping){
+    servo.sleep();
+  }else{
+    servo.wakeup();
+  }
 }
 
 #include "index_html.h"
@@ -83,17 +89,36 @@ static esp_err_t index_handler(httpd_req_t *req){
   return res;
 }
 
-#define _CTRL_RESP "{\"pulse_width\": %d}"
 static esp_err_t ctrl_handler(httpd_req_t *req)
 {
   esp_err_t res = ESP_OK;
 
-  pulse_width = query_value_string(req, "pulse_width").toInt();
-  printf("pulse_width=%d\n", pulse_width);
-  #define BUF_SIZE 256
-  char* buf[BUF_SIZE+1];
-  size_t len = snprintf((char*)buf, BUF_SIZE, _CTRL_RESP, pulse_width);
-  res = httpd_resp_send(req, (const char *)buf, len);
+  String mode = query_value_string(req, "mode");
+  if(mode == "servo"){
+    _ctrl_servo_number = query_value_string(req, "servo_number").toInt();
+    if(_ctrl_servo_number<0 || 15<_ctrl_servo_number){
+      _ctrl_servo_number = -1;
+      return ESP_FAIL;
+    }
+    _ctrl_pulse_width = query_value_string(req, "pulse_width").toInt();
+
+    #define BUF_SIZE 256
+    char* buf[BUF_SIZE+1];
+    #define _CTRL_SERVO_RESP "{\"servo_number\": %d, \"pulse_width\": %d}"
+    size_t len = snprintf((char*)buf, BUF_SIZE, _CTRL_SERVO_RESP, _ctrl_servo_number, _ctrl_pulse_width);
+    res = httpd_resp_send(req, (const char *)buf, len);
+  }
+
+  if(mode == "sleep"){
+    _ctrl_sleeping = query_value_string(req, "sleep").toInt()==1;
+
+    #define BUF_SIZE 256
+    char* buf[BUF_SIZE+1];
+    #define _CTRL_SLEEP_RESP "{\"sleep\": %d}"
+    size_t len = snprintf((char*)buf, BUF_SIZE, _CTRL_SLEEP_RESP, _ctrl_sleeping);
+    res = httpd_resp_send(req, (const char *)buf, len);
+  }
+
   return res;
 }
 
@@ -185,7 +210,7 @@ void update_display()
   M5.Lcd.setTextSize(1);
   M5.Lcd.setTextColor(WHITE, BLACK);
   M5.Lcd.setCursor(1, 1);
-  M5.Lcd.printf("ServoWebTester\n");
+  //M5.Lcd.printf("ServoWebTester\n");
 
   RTC_TimeTypeDef time;
   RTC_DateTypeDef date;
@@ -198,5 +223,4 @@ void update_display()
 
   IPAddress ipAddress = WiFi.localIP();
   M5.Lcd.printf("%s\n", ipAddress.toString().c_str());
-  M5.Lcd.printf("pulse_width=%d\n", pulse_width);
 }
